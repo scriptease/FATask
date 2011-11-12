@@ -1,31 +1,45 @@
 FATask: Mix aus Future und Continuations
+========================================
 
 Future:
-	Asynchroner Task der ein Ergebnis liefert das erst noch berechnet werden muss.
-	Ausführbarer Thread kann Task asynchron starten, wenn er das Ergebnis braucht,
-	kann eine Methode get aufrufen die solange blockiert bis der Task fertig ist.
-	Exceptions beim asynchronen Task werden aufgehoben und an den Aufrufenden geworfen.  
+-------
+
+* Asynchroner Task der ein Ergebnis liefert das erst noch berechnet werden muss.
+* Ausführbarer Thread kann Task asynchron starten, wenn er das Ergebnis braucht, kann eine Methode get aufrufen die solange blockiert bis der Task fertig ist.
+* Exceptions beim asynchronen Task werden aufgehoben und an den Aufrufenden geworfen.  
 	
 Continuation:
-	Angabe eines Block oder Tasks, der das Ergebnis eines vorhergehenden Tasks auswerten kann
-	Die Continuation wird ausgeführt wenn der vorhergehende Tasks fertig ist und das Ergebnis feststeht.
-	Exceptions des vorhergehenden Tasks werden weitergegeben.
+-------------
+
+* Angabe eines Block oder Tasks, der das Ergebnis eines vorhergehenden Tasks auswerten kann
+* Die Continuation wird ausgeführt wenn der vorhergehende Tasks fertig ist und das Ergebnis feststeht.
+*Exceptions des vorhergehenden Tasks werden weitergegeben.
 	
 Task:
-	Wrapper um eine einzige synchrone Methode die ein Ergebnis zurückgibt oder eine Exception wirft;
-	BlockTask: Implementation eines Tasks mit einem Block der selben Signatur
+-----
+
+* Wrapper um eine einzige synchrone Methode die ein Ergebnis zurückgibt oder eine Exception wirft;
+* BlockTask: Implementation eines Tasks mit einem Block der selben Signatur
 	
-	Ein Task kann die Ergebnisse des Vorgängers über [previousTask result] und [previousTask error] benutzen.
+* Ein Task kann die Ergebnisse des Vorgängers über [previousTask result] und [previousTask error] benutzen.
 	
-	Vorschlag für synchrone Ausführung
+Synchrone Ausführung
+--------------------
 
-	- (id) executeWithTask: (FATask*) previousTask;
+Diese Methode führt den Task aus, sie sollte auch überschrieben werden bei eigenen Subklassen,
+wahlweise kann man auch die FABlockTask Implementierung hernehmen ohne eigene Klasse. 
 
-	Beim asynchronen Aufruf kann eine dispatch group oder queue mit gegeben werden die den Ort der Ausführung spezifiziert.
-	Das Ganze soll Deadlock frei funktionieren egal wie die Tasks aufeinander folgen
+```
+- (id) executeWithTask: (FATask*) previousTask;
+```
 
-	Vorschlag für asynchrone Ausführung
+Asynchrone Ausführung
+---------------------
 
+Beim asynchronen Aufruf kann eine dispatch group oder queue mit gegeben werden die den Ort der Ausführung spezifiziert.
+Das Ganze funktioniert Deadlock frei egal wie die Tasks aufeinander folgen
+
+```
 	- (void) start;
 	- (void) startWithDispatchQueue: (dispatch_queue_t) queue;
 	- (void) startWithDispatchQueue: (dispatch_queue_t) queue group: (dispatch_group_t) group;
@@ -35,14 +49,17 @@ Task:
 
 	+ (FATask*) startBackgroundTaskWithBlock:(id (^)(FATask* task)) block;
 	+ (FATask*) startMainThreadTaskWithBlock:(id (^)(FATask* task)) block;
+```
 	
-	Solange ein Taskobjekt existiert können beliebig viele Continuations registriert werden:
-		Die Registrierung soll nicht blockieren
-	    Wenn ein Task noch nicht fertig ist wird auf seine Fertigstellung gewartet
-	    Wenn ein Task fertig war wird die Continuation ausgeführt.
-	
-	Vorschlag für Continuations
+Continuations
+-------------
 
+Solange ein Taskobjekt existiert können beliebig viele Continuations registriert werden:
+* Die Registrierung soll nicht blockieren
+* Wenn ein Task noch nicht fertig ist wird auf seine Fertigstellung gewartet
+* Wenn ein Task fertig war wird die Continuation ausgeführt.
+
+```
 	- (FATask*) continueWithTask:(FATask*) task;
 	- (FATask*) continueWithTask:(FATask*) task dispatchQueue: (dispatch_queue_t) queue;
 	- (FATask*) continueWithTask:(FATask*) task dispatchQueue: (dispatch_queue_t) queue group: (dispatch_group_t) group;
@@ -56,19 +73,27 @@ Task:
 
 	- (FATask*) continueWithBackgroundBlock:(void (^)(FATask* task)) block;
 	- (FATask*) continueWithMainThreadBlock:(void (^)(FATask* task)) block;
-	
-	Vorschlag für häufig gebrauchte Tasks
+```
 
+Häufig gebrauchte Tasks
+-----------------------
+
+```
 	+ (void) performInBackground: (id (^)()) backgroundBlock continuation: (void (^)(id result, NSException* error)) continuation;
 	+ (void) performInBackground: (id (^)()) backgroundBlock continuation: (void (^)(id result, NSException* error)) continuation group: (dispatch_group_t) group;
 
 	+ (void) performInBackground: (id (^)()) backgroundBlock mainThreadContinuation: (void (^)(id result, NSException* error)) continuation;
 	+ (void) performInBackground: (id (^)()) backgroundBlock mainThreadContinuation: (void (^)(id result, NSException* error)) continuation group: (dispatch_group_t) group;
-	
-Beispiele für die Verwendung:
+```
+
+Beispiele:
+==========
+
 
 Verkettung von 3 Tasks:
+-----------------------
 
+```
     FATask* backgroundTask = [FATask startBackgroundTaskWithBlock:^id(FATask* task) {
 
         NSLog(@"Task1: Background return 42");
@@ -91,9 +116,12 @@ Verkettung von 3 Tasks:
     }];
     
     [backgroundTask continueWithTask:nextTask];
+```
 
 Generierung und Sortierung einer Liste anschließend Ausgabe
+-----------------------------------------------------------
 
+```
 	FATask* task = [[FATask startBackgroundTaskWithBlock:^id(FATask* task) {
 	
 		// Erster Task: Generierung einer Liste
@@ -115,9 +143,12 @@ Generierung und Sortierung einer Liste anschließend Ausgabe
 	// Benutzen des Ergebnisses des Tasks 1
 	id result = [task  get];
     NSLog(@"Task2: Result unsorted because continuations only propergate result 1 level %@",result);
+```
 
 Vereinfachte Weitergabe an den Mainthread
+-----------------------------------------
 
+```
 [[FATask startBackgroundTaskWithBlock:^id(FATask* task) {
 
     return (id)[NSNumber numberWithInt:42];
@@ -127,9 +158,12 @@ Vereinfachte Weitergabe an den Mainthread
     NSLog(@"Task3: Mainthread response %@", [task result]);
 
 }];
+```
 
 Vereinfachte Weitergabe an den Mainthread (ohne Deadlocks)
+----------------------------------------------------------
 
+```
 [[FATask startMainThreadTaskWithBlock:^id(FATask* task) {
 
     NSLog(@"Task4: main");
@@ -145,3 +179,4 @@ Vereinfachte Weitergabe an den Mainthread (ohne Deadlocks)
     NSLog(@"Task4: main result %@", [task result]);
 
 }]];
+```
